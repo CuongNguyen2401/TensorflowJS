@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+</head>
+<body>
+  <!-- EXAMPLE
+    - same font, font side
+    - hotel Windsor outside on the right
+    - burnham beeches: outside on the right, take the state library, đổi photography
+    - brewery yard: đẩy chữ Deal xuống dưới
+    - redcourt: at the right of the bottom
+    - redcourt: removing the pdf name
+    - Sheraton four points: outside the right
+    - swell: outside the right
+    - ace: at the right side
+    - 6 marne: label
+    create branch, eat lunch, go swimming -->
+  <textarea id="note" rows="10" cols="50">
+   
+  </textarea>
+  <button onclick="generateTaskList()">Generate Task List</button>
+  <div id="task-list"></div>
+  
+  <script>
+    const maxLen = 50; 
+
+    async function run() {
+      let model;
+      try {
+        model = await tf.loadLayersModel('localstorage://my-model');
+        console.log('Model loaded from local storage.');
+      } catch (error) {
+        console.log('No pre-existing model found. Training a new model...');
+        model = await trainModel();
+        await model.save('localstorage://my-model');
+        console.log('New model trained and saved to local storage.');
+      }
+    }
+
+    async function trainModel() {
+      const texts = [
+        "create branch", 
+        "eat lunch", 
+        "go swimming", 
+        "clean room",
+        "same font, font side",
+        "hotel Windsor outside on the right",
+        "burnham beeches: outside on the right, take the state library, đổi photography",
+        "brewery yard: đẩy chữ Deal xuống dưới",
+        "redcourt: at the right of the bottom",
+        "redcourt: removing the pdf name",
+        "Sheraton four points: outside the right",
+        "swell: outside the right",
+        "ace: at the right side",
+        "6 marne: label"
+      ];
+      const labels = [1, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1];  // 1 for task, 0 for non-task
+
+      // Tokenize and pad sequences
+      const sequences = texts.map(text => text.split(' ').map(word => word.charCodeAt(0)));
+      const paddedSequences = sequences.map(seq => [...seq, ...Array(maxLen - seq.length).fill(0)]);  // Pad sequences to the same length
+
+      console.log('Padded Sequences:', paddedSequences);
+
+      // Convert to tensors
+      const inputTensor = tf.tensor2d(paddedSequences, [paddedSequences.length, maxLen]);
+      const labelTensor = tf.tensor2d(labels, [labels.length, 1]);
+
+      console.log('Input Tensor Shape:', inputTensor.shape);
+      console.log('Label Tensor Shape:', labelTensor.shape);
+
+      // Build and compile the model
+      const model = tf.sequential();
+      model.add(tf.layers.embedding({ inputDim: 512, outputDim: 16, inputLength: maxLen }));
+      model.add(tf.layers.globalAveragePooling1d());
+      model.add(tf.layers.dense({ units: 16, activation: 'relu' }));
+      model.add(tf.layers.dense({ units: 1, activation: 'sigmoid' }));
+
+      model.compile({ optimizer: 'adam', loss: 'binaryCrossentropy', metrics: ['accuracy'] });
+      await model.fit(inputTensor, labelTensor, { epochs: 10 });
+
+      return model;
+    }
+
+    async function loadModel() {
+      const model = await tf.loadLayersModel('localstorage://my-model');
+      return model;
+    }
+
+    function preprocessNote(note) {
+      return note.split('\n').map(sentence => sentence.trim());
+    }
+
+    async function generateTaskList() {
+      const note = document.getElementById('note').value;
+      const sentences = preprocessNote(note);
+      const model = await loadModel();
+
+      let taskList = '<h3>To-do List</h3><ul>';
+      for (let sentence of sentences) {
+        if (!sentence) continue;  
+        // Convert the sentence to a tensor
+        const sequence = sentence.split(' ').map(word => word.charCodeAt(0));
+        const paddedSequence = [...sequence, ...Array(maxLen - sequence.length).fill(0)];
+        console.log('Padded Sequence:', paddedSequence);
+
+        const inputTensor = tf.tensor2d([paddedSequence], [1, maxLen]);
+        console.log('Input Tensor Shape for Prediction:', inputTensor.shape);
+
+        const prediction = model.predict(inputTensor);
+        const isTask = (await prediction.data())[0] > 0.5;
+
+        if (isTask) {
+          taskList += `<li>${sentence}</li>`;
+        }
+      }
+      taskList += '</ul>';
+      document.getElementById('task-list').innerHTML = taskList;
+    }
+
+    run();
+  </script>
+</body>
+</html>
